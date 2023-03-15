@@ -1,4 +1,4 @@
-module decoder
+module github.com/4cecoder/decoder
 
 go 1.20
 
