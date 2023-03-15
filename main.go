@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,23 +10,6 @@ import (
 
 	"github.com/fatih/color"
 )
-
-// Decodes a JWT token and returns the payload as a map[string]interface{}.
-func DecodeJWT(token string) (map[string]interface{}, error) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid token format")
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, err
-	}
-	var payloadMap map[string]interface{}
-	if err := json.Unmarshal(payload, &payloadMap); err != nil {
-		return nil, err
-	}
-	return payloadMap, nil
-}
 
 // Prints the usage message for the program.
 func usage() {
@@ -50,14 +33,15 @@ func usage() {
 }
 
 func main() {
-	var token string
-	var outFile string
+	var token, outFile, base64Encoded, aesKeyHex string
 	var showHelp bool
 
 	// define flags
-	flag.StringVar(&token, "token", "", " JWT token to decode")
-	flag.StringVar(&outFile, "out", "", "     output file")
-	flag.BoolVar(&showHelp, "help", false, " show help message")
+	flag.StringVar(&token, "token", "", "JWT token to decode")
+	flag.StringVar(&outFile, "out", "", "Output file")
+	flag.StringVar(&base64Encoded, "base64", "", "Base64 encoded string to decode")
+	flag.StringVar(&aesKeyHex, "aes-key", "", "AES key (hex) for decryption")
+	flag.BoolVar(&showHelp, "help", false, "Show help message")
 
 	// set usage message
 	flag.Usage = usage
@@ -71,44 +55,71 @@ func main() {
 		return
 	}
 
-	// check for missing token flag
-	if token == "" {
-		color.Red("Missing token flag")
-		flag.Usage()
-		return
-	}
-
-	// decode token
-	payload, err := DecodeJWT(token)
-	if err != nil {
-		color.Red("Error decoding JWT: %v", err)
-		return
-	}
-
-	// pretty-print payload
-	payloadBytes, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		color.Red("Error encoding payload: %v", err)
-		return
-	}
-	payloadStr := string(payloadBytes)
-
-	// write payload to file
-	if outFile != "" {
-		f, err := os.Create(outFile)
+	// If JWT token is provided, decode it
+	if token != "" {
+		// decode token
+		payload, err := DecodeJWT(token)
 		if err != nil {
-			color.Red("Error creating file: %v", err)
+			color.Red("Error decoding JWT: %v", err)
 			return
 		}
-		defer f.Close()
 
-		_, err = f.WriteString(payloadStr)
+		// pretty-print payload
+		payloadBytes, err := json.MarshalIndent(payload, "", "  ")
 		if err != nil {
-			color.Red("Error writing file: %v", err)
+			color.Red("Error encoding payload: %v", err)
 			return
 		}
-	} else {
-		// print payload to stdout
-		fmt.Println(payloadStr)
+		payloadStr := string(payloadBytes)
+
+		// write payload to file or print to stdout
+		if outFile != "" {
+			f, err := os.Create(outFile)
+			if err != nil {
+				color.Red("Error creating file: %v", err)
+				return
+			}
+			defer f.Close()
+
+			_, err = f.WriteString(payloadStr)
+			if err != nil {
+				color.Red("Error writing file: %v", err)
+				return
+			}
+		} else {
+			fmt.Println(payloadStr)
+		}
+	}
+
+	// If base64 encoded string is provided, decode it
+	if base64Encoded != "" {
+		decodedData, err := Base64Decode(base64Encoded)
+		if err != nil {
+			fmt.Println("Error decoding base64 string:", err)
+			return
+		}
+		fmt.Println("Decoded data:", string(decodedData))
+	}
+
+	// If encrypted data and AES key are provided, decrypt the data
+	if base64Encoded != "" && aesKeyHex != "" {
+		decodedData, err := Base64Decode(base64Encoded)
+		if err != nil {
+			fmt.Println("Error decoding base64 string:", err)
+			return
+		}
+
+		aesKey, err := hex.DecodeString(aesKeyHex)
+		if err != nil {
+			fmt.Println("Error decoding AES key:", err)
+			return
+		}
+
+		decryptedData, err := DecryptAES(decodedData, aesKey)
+		if err != nil {
+			fmt.Println("Error decrypting data:", err)
+			return
+		}
+		fmt.Println("Decrypted data:", string(decryptedData))
 	}
 }
